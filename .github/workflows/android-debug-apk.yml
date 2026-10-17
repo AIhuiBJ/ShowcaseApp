@@ -32,9 +32,21 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: |
+            17
+            21
 
-      - uses: android-actions/setup-android@v3
+      # android-actions/setup-android@v3 currently dies on `sdkmanager tools`,
+      # so accept the preinstalled SDK's licenses directly instead. AGP then
+      # downloads the API 37 platform / build-tools it needs on its own.
+      - name: Accept Android SDK licenses
+        run: |
+          SDKMANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --install "platforms;android-37" "platform-tools" 2>&1 | tail -2 || true
+          fi
+          ls "$ANDROID_HOME/platforms"
 
       - uses: gradle/actions/setup-gradle@v4
 
