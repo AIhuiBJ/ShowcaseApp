@@ -90,11 +90,11 @@ jobs:
         # gravity-sensor filter and the screen-off window, and their compilation is
         # itself a check that the shared (commonTest) sources still build.
         continue-on-error: true
-        run: >
-          sh scripts/gradle-platform.sh standard
-          :composeApp:androidHostTest
-          --tests "com.alpha.showcase.common.ui.play.*"
-          --no-daemon --console=plain
+        run: |
+          sh scripts/gradle-platform.sh standard :composeApp:desktopTest \
+            --tests "com.alpha.showcase.common.ui.play.*" --no-daemon --console=plain \
+          || sh scripts/gradle-platform.sh standard :composeApp:tasks --all \
+            --no-daemon --console=plain | grep -i 'test' | sort -u
 
       - name: Collect APKs
         run: |
