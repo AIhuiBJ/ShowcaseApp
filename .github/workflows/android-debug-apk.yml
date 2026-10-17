@@ -53,16 +53,26 @@ jobs:
       - name: Configure local.properties
         # compileSdk 37 is not on the runner image yet; AGP downloads the missing
         # platform itself once the SDK licenses are accepted (setup-android above).
+        # Real keys come from repo secrets when set; otherwise a build-only
+        # placeholder keeps configuration working (those photo providers stay
+        # unusable in the APK until the real keys are provided).
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          UNSPLASH_API_KEY: ${{ secrets.UNSPLASH_API_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: |
-          printf 'sdk.dir=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSENTRY_DSN=%s\n' \
-            "$ANDROID_HOME" \
-            "${SUPABASE_URL:-https://compile-only.invalid}" \
-            "${SUPABASE_ANON_KEY:-compile-only}" \
-            "${SENTRY_DSN:-https://compile-only.invalid/1}" > local.properties
+          {
+            printf 'sdk.dir=%s\n' "$ANDROID_HOME"
+            printf 'SUPABASE_URL=%s\n' "${SUPABASE_URL:-https://compile-only.invalid}"
+            printf 'SUPABASE_ANON_KEY=%s\n' "${SUPABASE_ANON_KEY:-compile-only}"
+            printf 'SENTRY_DSN=%s\n' "${SENTRY_DSN:-https://compile-only.invalid/1}"
+            printf 'PEXELS_API_KEY=%s\n' "${PEXELS_API_KEY:-compile-only}"
+            printf 'UNSPLASH_API_KEY=%s\n' "${UNSPLASH_API_KEY:-compile-only}"
+            printf 'TMDB_API_KEY=%s\n' "${TMDB_API_KEY:-compile-only}"
+          } > local.properties
           printf '%s\n' \
             'org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
             'kotlin.daemon.jvmargs=-Xmx2g' \
