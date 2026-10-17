@@ -116,15 +116,81 @@ internal fun rememberPagerImagePlaybackProgress(
     itemCount: Int,
     animationMillis: Int,
     stateForPage: (Int) -> MediaItemState,
-): State<Float> = rememberImagePlaybackProgress(displayDurationMillis, owner = pagerState, current = {
-    if (itemCount <= 1) ImagePlaybackFrame(Unit, ready = false, enabled = false)
-    else {
-        val page = pagerState.currentPage
-        val media = stateForPage(page)
-        ImagePlaybackFrame(page to media, media.ready, paused = pagerState.isScrollInProgress,
-            enabled = !media.data.isVideo())
+): State<Float> {
+    SkipMismatchedOrientation(pagerState, itemCount, stateForPage)
+    return rememberImagePlaybackProgress(displayDurationMillis, owner = pagerState, current = {
+        if (itemCount <= 1) ImagePlaybackFrame(Unit, ready = false, enabled = false)
+        else {
+            val page = pagerState.currentPage
+            val media = stateForPage(page)
+            ImagePlaybackFrame(page to media, media.ready, paused = pagerState.isScrollInProgress,
+                enabled = !media.data.isVideo())
+        }
+    }) {
+        val next = if (pagerState.canScrollForward) pagerState.currentPage + 1 else 0
+        pagerState.animateScrollToPage(next, animationSpec = tween(animationMillis))
     }
-}) {
-    val next = if (pagerState.canScrollForward) pagerState.currentPage + 1 else 0
-    pagerState.animateScrollToPage(next, animationSpec = tween(animationMillis))
 }
+
+/**
+ * Steps over photos whose own orientation disagrees with the device orientation read from the
+ * gravity sensor, so a portrait frame only plays portrait photos and vice versa.
+ *
+ * Only the decoded photo can tell us its orientation, so a mismatched photo is stepped over as
+ * soon as it resolves rather than never being fetched at all. The streak is capped at one full
+ * cycle: when nothing in the set matches, every photo is played so the frame never goes blank.
+ */
+@Composable
+private fun SkipMismatchedOrientation(
+    pagerState: PagerState,
+    itemCount: Int,
+    stateForPage: (Int) -> MediaItemState,
+) {
+    val wanted = LocalImageOrientationFilter.current
+    if (wanted != null && itemCount > 1) {
+        MismatchSkipEffect(pagerState, itemCount, wanted, stateForPage)
+    }
+}
+
+@Composable
+private fun MismatchSkipEffect(
+    pagerState: PagerState,
+    itemCount: Int,
+    wanted: DeviceOrientation,
+    stateForPage: (Int) -> MediaItemState,
+) {
+    val guard = remember(pagerState, wanted, itemCount) { MismatchSkipGuard(itemCount) }
+    val page = pagerState.currentPage
+    val image = stateForPage(page).displayedImage
+    val scrolling = pagerState.isScrollInProgress
+    LaunchedEffect(wanted, page, image, scrolling) {
+        if (image != null && !scrolling) {
+            val actual = photoOrientation(image.width, image.height)
+            if (actual == null || actual == wanted) {
+                guard.reset()
+            } else if (guard.allowSkip()) {
+                delay(MISMATCH_SKIP_DELAY_MILLIS)
+                if (!pagerState.isScrollInProgress) {
+                    val next = if (pagerState.canScrollForward) page + 1 else 0
+                    if (next != page) pagerState.scrollToPage(next)
+                }
+            }
+        }
+    }
+}
+
+private class MismatchSkipGuard(private val itemCount: Int) {
+    private var consecutive = 0
+
+    fun reset() {
+        consecutive = 0
+    }
+
+    fun allowSkip(): Boolean {
+        if (consecutive >= itemCount) return false
+        consecutive++
+        return true
+    }
+}
+
+private const val MISMATCH_SKIP_DELAY_MILLIS = 250L

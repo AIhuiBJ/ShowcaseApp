@@ -73,6 +73,10 @@
     <string name="interval_time_unit">Interval time unit</string>
     <string name="sort_rule">Sort rule</string>
     <string name="frame_style">Frame style</string>
+    <string name="sensor_based_orientation">Match photo orientation to device</string>
+    <string name="screen_off_time">Screen Off Time</string>
+    <string name="screen_off_start_time">Start Time</string>
+    <string name="screen_off_end_time">End Time</string>
     <string name="show_time_progress_indicator">Show time progress indicator</string>
     <string name="show_time_and_date">Show time and date</string>
     <string name="timecard_date_pattern">%2$d/%3$d/%1$d</string>

@@ -67,6 +67,10 @@
     <string name="interval">间隔时间</string>
     <string name="interval_time_unit">时间单位</string>
     <string name="sort_rule">排序规则</string>
+    <string name="sensor_based_orientation">按重力传感器方向播放照片</string>
+    <string name="screen_off_time">关屏时间</string>
+    <string name="screen_off_start_time">开始时间</string>
+    <string name="screen_off_end_time">结束时间</string>
     <string name="frame_style">画框样式</string>
     <string name="show_time_progress_indicator">显示时间进度</string>
     <string name="show_time_and_date">显示时间和日期</string>

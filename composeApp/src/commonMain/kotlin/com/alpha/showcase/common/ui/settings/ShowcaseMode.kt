@@ -166,6 +166,34 @@ fun ShowcaseSettings(
                                     )
                                 }
 
+                                SENSOR_BASED_ORIENTATION_KEY -> {
+                                    settings.slideMode.copy(
+                                        sensorBasedOrientation = value as Boolean
+                                    )
+                                }
+
+                                SCREEN_OFF_ENABLED_KEY -> {
+                                    settings.slideMode.copy(
+                                        screenOffEnabled = value as Boolean
+                                    )
+                                }
+
+                                SCREEN_OFF_START_KEY -> {
+                                    val minuteOfDay = value as Int
+                                    settings.slideMode.copy(
+                                        screenOffStartHour = minuteOfDay / MINUTES_PER_HOUR,
+                                        screenOffStartMinute = minuteOfDay % MINUTES_PER_HOUR,
+                                    )
+                                }
+
+                                SCREEN_OFF_END_KEY -> {
+                                    val minuteOfDay = value as Int
+                                    settings.slideMode.copy(
+                                        screenOffEndHour = minuteOfDay / MINUTES_PER_HOUR,
+                                        screenOffEndMinute = minuteOfDay % MINUTES_PER_HOUR,
+                                    )
+                                }
+
                                 else -> {
                                     settings.slideMode
                                 }

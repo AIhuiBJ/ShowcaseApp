@@ -42,7 +42,13 @@ data class Settings(
     val displayMode: Int = 0,
     val sortRule: Int = 0,
     val effect: Int = 0,
-    val duoFoldRetreat: Boolean = true
+    val duoFoldRetreat: Boolean = true,
+    val sensorBasedOrientation: Boolean = false,
+    val screenOffEnabled: Boolean = false,
+    val screenOffStartHour: Int = 23,
+    val screenOffStartMinute: Int = 0,
+    val screenOffEndHour: Int = 7,
+    val screenOffEndMinute: Int = 0
   )
 
   @Serializable

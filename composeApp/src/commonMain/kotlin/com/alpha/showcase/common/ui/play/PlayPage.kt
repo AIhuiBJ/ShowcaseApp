@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -157,9 +158,15 @@ fun PlayPage(remoteApi: RemoteApi, onBack: () -> Unit = {}) {
     val playbackVisible = rememberPlaybackActive()
     val autoFullscreen = playFullScreenEnabled(settingsState) && playbackVisible
 
+    // Inside the scheduled screen-off window the panel must stay dark, so the keep-awake flag is
+    // not held even though playback is otherwise visible.
+    val slideMode = (settingsState as? UiState.Content)?.data?.slideMode
+        ?: Settings.getDefaultInstance().slideMode
+    val screenOffScheduled = rememberScreenOffActive(slideMode)
+
     ScreenControlEffect(
         screenFeature = screenFeature,
-        keepScreenOn = playbackVisible && shouldKeepScreenOnDuringPlayback(
+        keepScreenOn = playbackVisible && !screenOffScheduled && shouldKeepScreenOnDuringPlayback(
             isDesktop = isDesktop(),
             autoFullscreen = autoFullscreen,
             isWeb = isWeb(),
@@ -271,8 +278,26 @@ fun MainPlayContentPage(
     val timeCardScope = rememberCoroutineScope()
     val timeCardVisibility = remember { TimeCardVisibilityState(timeCardScope) }
 
-    val playbackActive = rememberPlaybackActive() && parentActive && !editMode
-    androidx.compose.runtime.CompositionLocalProvider(LocalPlaybackActive provides playbackActive) {
+    // The scheduled screen-off window stops playback and darkens the panel. Settings previews
+    // (editMode) keep rendering so the user can still see the style they are editing.
+    val screenOffActive = !editMode && parentActive && rememberScreenOffActive(settings.slideMode)
+    LaunchedEffect(screenOffActive) { applyScreenBlackout(screenOffActive) }
+    DisposableEffect(Unit) {
+        onDispose { applyScreenBlackout(false) }
+    }
+
+    // Gravity-sensor orientation filter: only photos matching the way the device is held play.
+    // Settings previews keep every photo so the style being edited still shows clearly.
+    val deviceOrientation = rememberDeviceOrientation()
+    val orientationFilter = deviceOrientation.takeIf {
+        !editMode && settings.slideMode.sensorBasedOrientation
+    }
+
+    val playbackActive = rememberPlaybackActive() && parentActive && !editMode && !screenOffActive
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalPlaybackActive provides playbackActive,
+        LocalImageOrientationFilter provides orientationFilter,
+    ) {
     AiPlaybackContext(settings, playbackActive) {
             Surface(Modifier.pointerInput(timeCardVisibility) {
                 awaitPointerEventScope {
@@ -449,6 +474,15 @@ fun MainPlayContentPage(
                             settings.showcaseMode != SHOWCASE_MODE_CALENDER
                         ) {
                             TimeCard(avoidImageSummary = settings.isAiSummaryEnabled())
+                        }
+
+                        // Screen-off window: nothing is played and the panel stays black.
+                        if (screenOffActive) {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black)
+                            )
                         }
                         }
                     }
