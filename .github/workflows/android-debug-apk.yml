@@ -92,7 +92,7 @@ jobs:
         continue-on-error: true
         run: >
           sh scripts/gradle-platform.sh standard
-          :composeApp:testDebugUnitTest
+          :composeApp:androidHostTest
           --tests "com.alpha.showcase.common.ui.play.*"
           --no-daemon --console=plain
 
