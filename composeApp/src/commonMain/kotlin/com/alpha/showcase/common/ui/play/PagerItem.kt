@@ -4,11 +4,13 @@ import LocalImageLoader
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -34,6 +36,11 @@ fun PagerItem(
     onComplete: (Any) -> Unit = {},
 ) {
     RetainMediaItemState(state)
+    if (state.hidden) {
+        // Rejected by the orientation filter: stay blank until the pager steps over this page.
+        Box(modifier.clipToBounds().background(Color.Black))
+        return
+    }
     val data = state.data
     if (!data.isImage()) {
         // This KMP renderer has no video/Live Photo backend yet.

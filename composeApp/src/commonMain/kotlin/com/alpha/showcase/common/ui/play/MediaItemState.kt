@@ -17,6 +17,12 @@ class MediaItemState(val data: Any, fitSize: Boolean = false) {
         internal set
     var showMetadata by mutableStateOf(false)
     var showActions by mutableStateOf(false)
+    /**
+     * Set by the gravity-sensor orientation filter. A photo that contradicts the way the device
+     * is held must not reach the screen at all — not even for the frame it takes to step over it —
+     * so the renderer draws nothing while this is set.
+     */
+    internal var hidden by mutableStateOf(false)
     // Includes a gesture in progress and a user zoom that has not returned to its original size.
     internal var isZoomActive by mutableStateOf(false)
     var interactionVersion by mutableIntStateOf(0)

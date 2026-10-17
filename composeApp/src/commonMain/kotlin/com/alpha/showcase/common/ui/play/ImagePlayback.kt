@@ -1,8 +1,17 @@
 package com.alpha.showcase.common.ui.play
 
+import LocalImageLoader
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.*
+import coil3.Image
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.compose.LocalPlatformContext
+import coil3.request.CachePolicy
+import coil3.request.SuccessResult
+import coil3.size.Scale
+import com.alpha.showcase.common.ui.ext.buildImageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -117,7 +126,12 @@ internal fun rememberPagerImagePlaybackProgress(
     animationMillis: Int,
     stateForPage: (Int) -> MediaItemState,
 ): State<Float> {
-    SkipMismatchedOrientation(pagerState, itemCount, stateForPage)
+    val wanted = LocalImageOrientationFilter.current
+    val gate = if (wanted != null && itemCount > 1) {
+        rememberOrientationPlaybackGate(wanted, itemCount, pagerState, stateForPage)
+    } else {
+        null
+    }
     return rememberImagePlaybackProgress(displayDurationMillis, owner = pagerState, current = {
         if (itemCount <= 1) ImagePlaybackFrame(Unit, ready = false, enabled = false)
         else {
@@ -128,69 +142,72 @@ internal fun rememberPagerImagePlaybackProgress(
         }
     }) {
         val next = if (pagerState.canScrollForward) pagerState.currentPage + 1 else 0
-        pagerState.animateScrollToPage(next, animationSpec = tween(animationMillis))
-    }
-}
-
-/**
- * Steps over photos whose own orientation disagrees with the device orientation read from the
- * gravity sensor, so a portrait frame only plays portrait photos and vice versa.
- *
- * Only the decoded photo can tell us its orientation, so a mismatched photo is stepped over as
- * soon as it resolves rather than never being fetched at all. The streak is capped at one full
- * cycle: when nothing in the set matches, every photo is played so the frame never goes blank.
- */
-@Composable
-private fun SkipMismatchedOrientation(
-    pagerState: PagerState,
-    itemCount: Int,
-    stateForPage: (Int) -> MediaItemState,
-) {
-    val wanted = LocalImageOrientationFilter.current
-    if (wanted != null && itemCount > 1) {
-        MismatchSkipEffect(pagerState, itemCount, wanted, stateForPage)
-    }
-}
-
-@Composable
-private fun MismatchSkipEffect(
-    pagerState: PagerState,
-    itemCount: Int,
-    wanted: DeviceOrientation,
-    stateForPage: (Int) -> MediaItemState,
-) {
-    val guard = remember(pagerState, wanted, itemCount) { MismatchSkipGuard(itemCount) }
-    val page = pagerState.currentPage
-    val image = stateForPage(page).displayedImage
-    val scrolling = pagerState.isScrollInProgress
-    LaunchedEffect(wanted, page, image, scrolling) {
-        if (image != null && !scrolling) {
-            val actual = photoOrientation(image.width, image.height)
-            if (actual == null || actual == wanted) {
-                guard.reset()
-            } else if (guard.allowSkip()) {
-                delay(MISMATCH_SKIP_DELAY_MILLIS)
-                if (!pagerState.isScrollInProgress) {
-                    val next = if (pagerState.canScrollForward) page + 1 else 0
-                    if (next != page) pagerState.scrollToPage(next)
-                }
-            }
+        val playable = gate?.nextPlayablePage(pagerState.currentPage)
+        if (playable != null && playable != next) {
+            // Jump instead of scrolling: an animated pass would render the skipped photos.
+            pagerState.scrollToPage(playable)
+        } else {
+            pagerState.animateScrollToPage(next, animationSpec = tween(animationMillis))
         }
     }
 }
 
-private class MismatchSkipGuard(private val itemCount: Int) {
-    private var consecutive = 0
-
-    fun reset() {
-        consecutive = 0
+/**
+ * Reads the photos ahead of the switch and hides the ones that disagree with the gravity sensor,
+ * so the pager never draws a photo it is about to step over.
+ */
+@Composable
+private fun rememberOrientationPlaybackGate(
+    wanted: DeviceOrientation,
+    itemCount: Int,
+    pagerState: PagerState,
+    stateForPage: (Int) -> MediaItemState,
+): OrientationPlaybackGate {
+    val context = LocalPlatformContext.current
+    val imageLoader = LocalImageLoader.current ?: coil3.SingletonImageLoader.get(context)
+    val currentPage = pagerState.currentPage
+    val gate = remember(wanted, itemCount, imageLoader, context) {
+        OrientationPlaybackGate(
+            wanted = wanted,
+            itemCount = itemCount,
+            dataAt = { page -> stateForPage(page).data },
+            stateAt = stateForPage,
+        ) { data -> probePhoto(imageLoader, context, data) }
     }
-
-    fun allowSkip(): Boolean {
-        if (consecutive >= itemCount) return false
-        consecutive++
-        return true
+    // Read ahead of the timer so the decision exists by the time playback switches pages.
+    LaunchedEffect(gate, currentPage) { gate.preroll(currentPage) }
+    // Before the pager composes its pages: nothing undecided may be drawn, not even once.
+    gate.hideUndecided(currentPage)
+    // Manual swipes, a first photo that disagrees, or a slow source: hide it, then step over it.
+    LaunchedEffect(gate, pagerState) {
+        snapshotFlow { if (pagerState.isScrollInProgress) NO_SETTLED_PAGE else pagerState.currentPage }
+            .collect { page ->
+                if (page != NO_SETTLED_PAGE && gate.decide(page) == false) {
+                    // Nothing judged playable yet: move one page on rather than sit on a blank one.
+                    val target = gate.nextPlayablePage(page) ?: nextPageInCycle(page, itemCount)
+                    if (target != page) pagerState.scrollToPage(target)
+                }
+            }
     }
+    return gate
 }
 
-private const val MISMATCH_SKIP_DELAY_MILLIS = 250L
+/**
+ * Decodes a small copy of a photo just far enough to learn its aspect. The probe keeps the memory
+ * cache clean — the pager's own request stays the one that fills it, at display size.
+ */
+private suspend fun probePhoto(
+    imageLoader: ImageLoader,
+    context: PlatformContext,
+    data: Any,
+): Image? {
+    val request = buildImageRequest(context, data).newBuilder()
+        .memoryCachePolicy(CachePolicy.DISABLED)
+        .size(PROBE_PHOTO_SIZE, PROBE_PHOTO_SIZE)
+        .scale(Scale.FIT)
+        .build()
+    return (imageLoader.execute(request) as? SuccessResult)?.image
+}
+
+private const val PROBE_PHOTO_SIZE = 480
+private const val NO_SETTLED_PAGE = -1

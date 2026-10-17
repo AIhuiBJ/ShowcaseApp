@@ -85,6 +85,17 @@ jobs:
           :androidApp:assembleDebug
           --no-daemon --console=plain --stacktrace
 
+      - name: Run orientation / screen-off unit tests
+        # Non-blocking: the APK is the deliverable. These are the checks covering the
+        # gravity-sensor filter and the screen-off window, and their compilation is
+        # itself a check that the shared (commonTest) sources still build.
+        continue-on-error: true
+        run: >
+          sh scripts/gradle-platform.sh standard
+          :composeApp:testDebugUnitTest
+          --tests "com.alpha.showcase.common.ui.play.*"
+          --no-daemon --console=plain
+
       - name: Collect APKs
         run: |
           mkdir -p dist
