@@ -1,0 +1,94 @@
+name: Android debug APK
+
+# Builds an installable debug APK on GitHub's runners (no local JDK / Android SDK needed)
+# and publishes it to a rolling prerelease so it can be downloaded on the device.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to publish the APK to
+        required: false
+        default: apk-latest
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-debug-apk
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Assemble debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # versionCode is `git rev-list --count HEAD`, so the full history matters.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure local.properties
+        # compileSdk 37 is not on the runner image yet; AGP downloads the missing
+        # platform itself once the SDK licenses are accepted (setup-android above).
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          printf 'sdk.dir=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSENTRY_DSN=%s\n' \
+            "$ANDROID_HOME" \
+            "${SUPABASE_URL:-https://compile-only.invalid}" \
+            "${SUPABASE_ANON_KEY:-compile-only}" \
+            "${SENTRY_DSN:-https://compile-only.invalid/1}" > local.properties
+          printf '%s\n' \
+            'org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8' \
+            'kotlin.daemon.jvmargs=-Xmx2g' \
+            'org.gradle.parallel=false' \
+            'org.gradle.workers.max=2' >> gradle.properties
+
+      - name: Assemble debug APK
+        run: >
+          sh scripts/gradle-platform.sh standard
+          :androidApp:assembleDebug
+          --no-daemon --console=plain --stacktrace
+
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          find androidApp/build/outputs/apk/debug -name '*.apk' -exec cp {} dist/ \;
+          ls -lh dist
+          test -n "$(ls -A dist)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: showcase-debug-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Publish to rolling release
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          TAG="${RELEASE_TAG:-apk-latest}"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --prerelease \
+              --title "ShowcaseApp debug APK" \
+              --notes "Built from ${GITHUB_SHA} on $(date -u +%FT%TZ)"
+          # Replace older builds so the newest APK is the only download.
+          for asset in $(gh release view "$TAG" --json assets --jq '.assets[].name'); do
+            gh release delete-asset "$TAG" "$asset" --yes || true
+          done
+          gh release upload "$TAG" dist/*.apk --clobber
